@@ -1,26 +1,24 @@
 package pcd.ass03.raft;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
 import io.vertx.core.Vertx;
-import io.vertx.core.json.Json;
-import io.vertx.core.json.jackson.DatabindCodec;
 
-import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
-import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.stream.IntStream;
 
 public class Main {
     public static void main(String[] args) {
         var vertx = Vertx.vertx();
-        var members = Stream.iterate(0, x -> x + 1)
-            .limit(4)
+        var members = IntStream.range(0, 4)
+            .boxed()
             .collect(Collectors.toMap(Function.identity(), Main::createMember));
 
         members.keySet().forEach((id) -> {
             var parameters = new Parameters(id, members);
-            vertx.deployVerticle(new RaftClient<>(parameters));
+            var client = RaftPeer.<Integer>make(parameters);
+            client.onBecomeLeader(leaderId -> System.out.printf("I'm the leader (%d)\n", leaderId));
+            client.onApplyLogEntry(entry -> System.out.printf("%d | Applying entry %d\n", id, entry));
+            vertx.deployVerticle(client);
         });
     }
 
