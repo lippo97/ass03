@@ -4,11 +4,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class RequestVoteResponse {
+    public final int term;
     public final boolean accepted;
 
-//    public RequestVoteResponse() { }
     @JsonCreator
-    public RequestVoteResponse(@JsonProperty("accepted") boolean accepted) {
+    public RequestVoteResponse(@JsonProperty("term") int term, @JsonProperty("accepted") boolean accepted) {
+        this.term = term;
         this.accepted = accepted;
     }
 }

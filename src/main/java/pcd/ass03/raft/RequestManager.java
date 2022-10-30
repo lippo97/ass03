@@ -8,15 +8,13 @@ import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.Json;
+import io.vertx.ext.web.handler.HttpException;
 import pcd.ass03.raft.message.*;
 
 public class RequestManager {
-
-    private final int id;
     private final HttpClient httpClient;
 
-    public RequestManager(int id, HttpClient httpClient) {
-        this.id = id;
+    public RequestManager(HttpClient httpClient) {
         this.httpClient = httpClient;
     }
 
@@ -25,13 +23,6 @@ public class RequestManager {
                 .flatMap(HttpClientRequest::end);
     }
 
-//    public Future<RequestVoteResponse> requestVote(int term, Member member) {
-//        return httpClient.request(HttpMethod.POST, member.getPort(), member.getHostname(), "/requestVote")
-//            .flatMap(req -> req.send(Json.encode(new RequestVoteRequest(term, this.id))))
-//            .flatMap(HttpClientResponse::body)
-//            .map(buffer -> Json.decodeValue(buffer, RequestVoteResponse.class));
-//    }
-
     public Future<RequestVoteResponse> requestVote(Member member, RequestVoteRequest body) {
         return httpClient.request(HttpMethod.POST, member.getPort(), member.getHostname(), "/requestVote")
             .flatMap(req -> req.send(Json.encode(body)))
@@ -39,17 +30,21 @@ public class RequestManager {
             .map(buffer -> Json.decodeValue(buffer, RequestVoteResponse.class));
     }
 
-    public Future<Void> sendHeartbeat(int leaderId, Member member) {
-        return httpClient.request(HttpMethod.POST, member.getPort(), member.getHostname(), "/heartbeat")
-            .flatMap(req -> req.send(Json.encodeToBuffer(new SendHeartbeatRequest(leaderId))))
-            .mapEmpty();
-    }
-
-    public Future<AppendEntriesResponse> appendEntries(Member member, AppendEntriesRequest body) {
+    public <A> Future<AppendEntriesResponse> appendEntries(Member member, AppendEntriesRequest<A> body) {
         return httpClient.request(HttpMethod.POST, member.getPort(), member.getHostname(), "/appendEntries")
             .flatMap(req -> req.send(Json.encodeToBuffer(body)))
             .flatMap(HttpClientResponse::body)
             .map(buffer -> Json.decodeValue(buffer, AppendEntriesResponse.class));
+    }
 
+    public <A> Future<Void> newLogEntry(Member member, NewLogEntryRequest<A> body) {
+        return httpClient.request(HttpMethod.POST, member.getPort(), member.getHostname(), "/newLogEntry")
+            .flatMap(req -> req.send(Json.encodeToBuffer(body)))
+            .flatMap(res -> {
+                if (res.statusCode() != 200) {
+                    return Future.failedFuture(new HttpException(res.statusCode()));
+                }
+                return Future.succeededFuture();
+           });
     }
 }

@@ -9,10 +9,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.javatuples.Pair;
-import pcd.ass03.raft.message.AppendEntriesRequest;
-import pcd.ass03.raft.message.AppendEntriesResponse;
-import pcd.ass03.raft.message.RequestVoteRequest;
-import pcd.ass03.raft.message.RequestVoteResponse;
+import pcd.ass03.raft.message.*;
 
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -24,7 +21,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
     private static final boolean DEBUG = true;
     public static final int PROACTIVE_BEHAVIOR_TIMEOUT = 50;
     public static final int HEARTBEAT_TIMEOUT_LEADER = 25;
-    public static final int HEARTBEAT_TIMEOUT_MIN = 100;
+    public static final int HEARTBEAT_TIMEOUT_MIN = 150;
     public static final int HEARTBEAT_TIMEOUT_MAX = 300;
     private final Parameters parameters;
     private RequestManager requestManager;
@@ -67,11 +64,11 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
                     _onApplyEntry.handle(value);
                 }
             }
+            lastApplied = commitIndex;
         }));
         this.leaderElectionTimerId = Optional.empty();
         lastApplied = commitIndex;
         this.requestManager = new RequestManager(
-            parameters.getId(),
             vertx.createHttpClient(
                 new HttpClientOptions().setConnectTimeout(1000)
             )
@@ -132,10 +129,11 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         router.route(HttpMethod.POST, "/requestVote").handler(ctx -> {
             final var req = ctx.body().asPojo(RequestVoteRequest.class);
             if (req.term < currentTerm ||
+                (req.term == currentTerm && currentRole == Role.CANDIDATE) ||
                 (req.term == currentTerm && votedFor.containsKey(req.term) && votedFor.get(req.term) != req.candidateId) ||
                 !isLogUpToDate(req)
             ) {
-                var res = new RequestVoteResponse(false);
+                var res = new RequestVoteResponse(currentTerm, false);
                 ctx.response().send(Json.encodeToBuffer(res));
                 return;
             }
@@ -143,7 +141,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
             currentLeaderId = req.candidateId;
             currentTerm = req.term;
             currentRole = Role.FOLLOWER;
-            final var res = new RequestVoteResponse(true);
+            final var res = new RequestVoteResponse(currentTerm,true);
             ctx.response().send(Json.encodeToBuffer(res));
             resetTimer();
             log("Following leader %d", currentLeaderId);
@@ -168,9 +166,14 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
                     .toBuffer()
             );
         });
-        router.route(HttpMethod.POST, "/pushLogEntry").handler(ctx -> {
-            final List<LogEntry<A>> entries = ((List<A>) ctx.body().asJsonArray().getList()).stream()
-                .map(a -> new LogEntry<>(currentTerm, a))
+        router.route(HttpMethod.POST, "/newLogEntry").handler(ctx -> {
+            if (currentRole != Role.LEADER) {
+                ctx.response().setStatusCode(405);
+                return;
+            }
+            final var req = (NewLogEntryRequest<A>) ctx.body().asPojo(NewLogEntryRequest.class);
+            final var entries = req.entries.stream()
+                .map(e -> new LogEntry<>(currentTerm, e))
                 .collect(Collectors.toList());
             log.addAll(entries);
             ctx.end();
@@ -210,13 +213,14 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
                             var response = res.getValue1();
                             votes.put(id, response.accepted);
                         }
+                        }
                     });
                     var countVotes = votes.values().stream()
                         .filter(x -> x)
                         .count();
                     if (isMajority(countVotes)) {
                         becomeLeader();
-                        log("I'm the leader.");
+                        log("I'm the leader with %d out of %d votes.", countVotes, parameters.getMembers().size());
                     } else {
                         log("Votes weren't enough.");
                         resetTimer();
@@ -366,5 +370,18 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
     @Override
     public void onApplyLogEntry(Handler<A> handler) {
         _onApplyEntry = handler;
+    }
+
+    @Override
+    public Future<Void> pushLogEntries(List<A> entries) {
+        if (parameters.getId() == currentLeaderId) {
+            final var logEntries = entries.stream()
+                .map(e -> new LogEntry<>(currentTerm, e))
+                .collect(Collectors.toList());
+            this.log.addAll(logEntries);
+            return Future.succeededFuture();
+        }
+        final var req = new NewLogEntryRequest<>(parameters.getId(), entries);
+        return requestManager.newLogEntry(parameters.getMembers().get(currentLeaderId), req);
     }
 }

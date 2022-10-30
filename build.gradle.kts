@@ -16,5 +16,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("pcd.ass03.raft.Main")
+    mainClass.set("pcd.ass03.puzzle.distributed.Main")
 }
