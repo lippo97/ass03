@@ -1,5 +1,6 @@
 package pcd.ass03.raft;
 
+import io.netty.channel.AbstractChannel;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpClientOptions;
 import io.vertx.core.http.HttpMethod;
@@ -11,6 +12,8 @@ import io.vertx.ext.web.handler.BodyHandler;
 import org.javatuples.Pair;
 import pcd.ass03.raft.message.*;
 
+import java.io.IOException;
+import java.net.ConnectException;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
@@ -37,6 +40,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
     private Handler<Integer> _onBecomeLeader;
     private Handler<A> _onApplyEntry;
     private Optional<Long> behaviorTimerId;
+    private Optional<Long> followerBehaviorTimerId;
     private Optional<Long> leaderElectionTimerId;
 
     public RaftPeerImpl(final Parameters parameters) {
@@ -66,6 +70,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
             }
             lastApplied = commitIndex;
         }));
+        this.followerBehaviorTimerId = Optional.empty();
         this.leaderElectionTimerId = Optional.empty();
         lastApplied = commitIndex;
         this.requestManager = new RequestManager(
@@ -90,6 +95,8 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         super.stop();
         behaviorTimerId.ifPresent(getVertx()::cancelTimer);
         behaviorTimerId = Optional.empty();
+        followerBehaviorTimerId.ifPresent(getVertx()::cancelTimer);
+        followerBehaviorTimerId = Optional.empty();
         leaderElectionTimerId.ifPresent(getVertx()::cancelTimer);
         leaderElectionTimerId = Optional.empty();
     }
@@ -194,28 +201,44 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         this.currentRole = Role.CANDIDATE;
         this.currentTerm = this.currentTerm + 1;
         final var futures = getOtherPeers().stream()
-            .map(member -> requestManager.requestVote(member, new RequestVoteRequest(
-                currentTerm,
-                parameters.getId(),
-                lastLogIndex(),
-                logTerm(lastLogIndex()).orElse(0) // unsafe
-            ))
-                .map(f -> new Pair<>(member.getId(), f)))
+            .map(member ->
+                requestManager.requestVote(member, new RequestVoteRequest(
+                    currentTerm,
+                    parameters.getId(),
+                    lastLogIndex(),
+                    logTerm(lastLogIndex()).orElse(0) // unsafe
+                ))
+                    .recover(throwable -> {
+                        if (throwable instanceof IOException) {
+                            return Future.succeededFuture();
+                        }
+                        return Future.failedFuture(throwable);
+                    })
+            .map(f -> new Pair<>(member.getId(), f)))
             .collect(Collectors.toList());
         final var votes = parameters.getMembers().keySet().stream()
             .collect(Collectors.toMap(Function.identity(), (id) -> id == parameters.getId()));
         CompositeFuture.join(Collections.unmodifiableList(futures))
             .onComplete((agg) -> {
                 if (agg.succeeded()) {
-                    agg.result().<Pair<Integer, RequestVoteResponse>>list().forEach(res -> {
-                        if (res != null) {
+                    final var results= agg.result().<Pair<Integer, RequestVoteResponse>>list();
+                    final var greaterTerm = results.stream()
+                        .filter(t -> t.getValue1() != null && t.getValue1().term > currentTerm)
+                        .findAny();
+                    if (greaterTerm.isPresent()) {
+                        currentLeaderId = greaterTerm.get().getValue0();
+                        currentTerm = greaterTerm.get().getValue1().term;
+                        currentRole = Role.FOLLOWER;
+                        return;
+                    }
+                    results.forEach(res -> {
+                        if (res != null && res.getValue1() != null) {
                             var id = res.getValue0();
                             var response = res.getValue1();
                             votes.put(id, response.accepted);
                         }
-                        }
                     });
-                    var countVotes = votes.values().stream()
+                    final var countVotes = votes.values().stream()
                         .filter(x -> x)
                         .count();
                     if (isMajority(countVotes)) {
@@ -225,10 +248,10 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
                         log("Votes weren't enough.");
                         resetTimer();
                     }
-                } else {
-                    log("On complete failed: %s", agg.cause().toString());
-                    resetTimer();
+                    return;
                 }
+                log("On complete failed: %s", agg.cause().toString());
+                resetTimer();
             });
     }
 
