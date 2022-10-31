@@ -65,6 +65,7 @@ public class Command {
             final var click = (Click) command;
             gen.writeStartObject();
             gen.writeStringField("type", "click");
+            gen.writeNumberField("sourceId", click.sourceId);
             gen.writeNumberField("position", click.position);
             gen.writeEndObject();
         }

@@ -370,7 +370,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
                         nextIndex.put(memberId, _lastLogIndex + 1);
                         matchIndex.put(memberId, _lastLogIndex);
                     } else {
-                        nextIndex.put(memberId, Math.max(0, nextIndexI - 1));
+                        nextIndex.put(memberId, Math.max(1, nextIndexI - 1));
                     }
                 });
         }

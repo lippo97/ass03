@@ -4,7 +4,8 @@ import java.awt.Image;
 
 public class Tile implements Comparable<Tile>{
 	private Image image;
-	private int originalPosition;
+    private int ownerId = -1;
+	private final int originalPosition;
 	private int currentPosition;
 
     public Tile(final Image image, final int originalPosition, final int currentPosition) {
@@ -15,6 +16,14 @@ public class Tile implements Comparable<Tile>{
 
     public Image getImage() {
     	return image;
+    }
+
+    public int getOwnerId() {
+        return ownerId;
+    }
+
+    public void setOwnerId(int ownerId) {
+        this.ownerId = ownerId;
     }
 
     public boolean isInRightPlace() {

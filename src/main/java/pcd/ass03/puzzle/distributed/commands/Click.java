@@ -6,10 +6,20 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 
 @JsonTypeName("click")
 public class Click extends Command {
+    public final int sourceId;
     public final int position;
 
     @JsonCreator
-    public Click(@JsonProperty("position") int position) {
+    public Click(
+        @JsonProperty("sourceId") int sourceId,
+        @JsonProperty("position") int position
+    ) {
+        this.sourceId = sourceId;
         this.position = position;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Click(sourceId=%d,position=%d)", sourceId, position);
     }
 }

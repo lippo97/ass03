@@ -12,4 +12,16 @@ public class Initialize extends Command {
     public Initialize(@JsonProperty("positions") List<Integer> positions) {
         this.positions = positions;
     }
+
+    @Override
+    public String toString() {
+        final var pos = positions.size() > 0 ?
+            positions.stream()
+                .map(Object::toString)
+                .reduce("", (x, y) -> x + "," + y)
+                .replaceFirst(",", "[") + "]"
+            : "[]";
+
+        return String.format("Initialize(positions=%s)", pos);
+    }
 }

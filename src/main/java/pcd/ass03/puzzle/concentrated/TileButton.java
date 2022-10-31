@@ -13,12 +13,12 @@ public class TileButton extends JButton{
 
 	public TileButton(final Tile tile) {
 		super(new ImageIcon(tile.getImage()));
-		
-		addMouseListener(new MouseAdapter() {            
-            @Override
-            public void mouseClicked(MouseEvent e) {
-            	setBorder(BorderFactory.createLineBorder(Color.red));
-            }
-        });
+
+//		addMouseListener(new MouseAdapter() {
+//            @Override
+//            public void mouseClicked(MouseEvent e) {
+//            	setBorder(BorderFactory.createLineBorder(Color.red));
+//            }
+//        });
 	}
 }
