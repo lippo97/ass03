@@ -54,12 +54,12 @@ public class AppParameters {
             }
             appParameters.raftParameters = new RaftParameters(id.get(), members.get());
             if (!appParameters.checkValidity()) {
-                throw new IllegalArgumentException("You must provide the following arguments:" +
+                throw new IllegalArgumentException("You must provide the following arguments:\n" +
                     "id <PEER_ID> members <PEER_0;...;PEER_N>");
             }
             return appParameters;
         } catch (IndexOutOfBoundsException | NoSuchElementException ex) {
-            throw new IllegalArgumentException("You must provide the following arguments:" +
+            throw new IllegalArgumentException("You must provide the following arguments:\n" +
                 "id <PEER_ID> members <PEER_0;...;PEER_N>");
         }
     }

@@ -1,12 +1,27 @@
+rows=4
+columns=4
+imagePath="image.jpg"
+n=$1
 members=""
-for i in `seq 0 3`; do
-    port=$(($i + 8080))
+
+./gradlew installDist
+
+if ! ./gradlew installDist; then
+	exit 1
+fi
+
+for i in $(seq 0 "$n"); do
+    port=$((i + 8080))
     m="$i:localhost:$port"
     members="$members;$m"
 done
 members=${members:1}
 
-for i in `seq 0 3`; do
-    gradle run --args "id $i members $members" &
+cmd=""
+for i in $(seq 0 "$n"); do
+    cmd="$cmd & build/install/ass03/bin/ass03 id $i members \"$members\" imagePath $imagePath rows $rows columns $columns"
 done
-# gradle run --args 'id $id members $members'
+cmd=${cmd:3}
+echo "$cmd"
+
+(trap 'kill 0' SIGINT; eval "$cmd")
