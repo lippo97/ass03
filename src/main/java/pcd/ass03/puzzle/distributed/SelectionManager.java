@@ -1,4 +1,6 @@
-package pcd.ass03.puzzle.concentrated;
+package pcd.ass03.puzzle.distributed;
+
+import pcd.ass03.puzzle.concentrated.Tile;
 
 public class SelectionManager {
 

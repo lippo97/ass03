@@ -1,61 +1,60 @@
 package pcd.ass03.puzzle.distributed;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.module.SimpleModule;
 import io.vertx.core.Vertx;
-import org.javatuples.Pair;
-import pcd.ass03.raft.Member;
-import pcd.ass03.raft.Parameters;
+import io.vertx.core.json.jackson.DatabindCodec;
+import pcd.ass03.puzzle.distributed.commands.Command;
+import pcd.ass03.puzzle.distributed.commands.Initialize;
 import pcd.ass03.raft.RaftPeer;
 
-import java.util.*;
+import java.io.IOException;
+import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class Main {
     public static void main(String[] args) {
+        DatabindCodec.mapper().registerModule(new SimpleModule() {{
+            addSerializer(Command.class, Command.serializer);
+        }});
+        DatabindCodec.prettyMapper().registerModule(new SimpleModule() {{
+            addSerializer(Command.class, Command.serializer);
+        }});
+
         try {
-            final var parameters = parseArgs(args);
+            final var parameters = AppParameters.parse(args);
             final var vertx = Vertx.vertx();
-            final var raftPeer = RaftPeer.make(parameters);
+            final var raftPeer = RaftPeer.<Command>make(
+                parameters.raftParameters,
+                new TypeReference<>() {},
+                new TypeReference<>() {}
+            );
+            final var board = new PuzzleBoard(parameters.rows, parameters.columns, parameters.imagePath);
+//            final var positions = IntStream.range(0, parameters.rows * parameters.columns)
+//                .boxed()
+//                .collect(Collectors.toList());
+
+            final var positions = List.of(3,1,2,0);
+
+            raftPeer.onApplyLogEntry((entry) -> {
+                System.out.println("applying " + entry);
+                if (entry instanceof Initialize) {
+                    final var initialize = (Initialize) entry;
+                    board.createTiles(initialize.positions);
+                    board.setVisible(true);
+                }
+            });
+            raftPeer.onBecomeLeader((id) -> {
+                System.out.println(id + " | I'm the leader");
+                vertx.setTimer(2000, (timerId) ->
+                    raftPeer.pushLogEntry(new Initialize(positions))
+                );
+            });
             vertx.deployVerticle(raftPeer);
         } catch (IllegalArgumentException ex) {
             System.err.println(ex.getMessage());
             System.exit(1);
         }
-    }
-
-    private static Parameters parseArgs(String[] args) throws IllegalArgumentException {
-        var id = Optional.<Integer>empty();
-        var members = Optional.<Map<Integer, Member>>empty();
-        var argList = List.of(args);
-        try {
-            while (argList.size() > 0) {
-                if (argList.get(0).equals("id")) {
-                    id = Optional.of(Integer.parseInt(argList.get(1)));
-                    argList = argList.subList(2, argList.size());
-                } else if (argList.get(0).equals("members")) {
-                    members = Optional.of(parseMap(argList.get(1)));
-                    argList = argList.subList(2, argList.size());
-                } else {
-                    argList = argList.subList(1, argList.size());
-                }
-            }
-            return new Parameters(id.get(), members.get());
-        } catch(IndexOutOfBoundsException | NoSuchElementException ex) {
-            throw new IllegalArgumentException("You must provide the following arguments:" +
-                "id <PEER_ID> members <PEER_0;...;PEER_N>");
-        }
-    }
-
-    private static Map<Integer, Member> parseMap(String in) {
-        return Arrays.stream(in.split(";"))
-            .map(Main::parseMember)
-            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-    }
-
-    private static Map.Entry<Integer, Member> parseMember(String in) {
-        final var tokens = in.split(":");
-        final var id = Integer.parseInt(tokens[0]);
-        final var hostname = tokens[1];
-        final var port = Integer.parseInt(tokens[2]);
-        return new AbstractMap.SimpleImmutableEntry<>(id, new Member(id, hostname, port));
     }
 }

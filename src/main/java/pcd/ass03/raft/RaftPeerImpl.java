@@ -1,19 +1,24 @@
 package pcd.ass03.raft;
 
-import io.netty.channel.AbstractChannel;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpClientOptions;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.json.jackson.DatabindCodec;
+import io.vertx.core.json.jackson.JacksonCodec;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.javatuples.Pair;
+import pcd.ass03.puzzle.distributed.commands.Command;
+import pcd.ass03.puzzle.distributed.commands.Initialize;
 import pcd.ass03.raft.message.*;
 
 import java.io.IOException;
-import java.net.ConnectException;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
@@ -21,12 +26,14 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
     public static final int PROACTIVE_BEHAVIOR_TIMEOUT = 50;
     public static final int HEARTBEAT_TIMEOUT_LEADER = 25;
     public static final int HEARTBEAT_TIMEOUT_MIN = 150;
     public static final int HEARTBEAT_TIMEOUT_MAX = 300;
-    private final Parameters parameters;
+    private final RaftParameters parameters;
+    private final TypeReference<AppendEntriesRequest<A>> appendEntriesRequestTypeReference;
+    private final TypeReference<NewLogEntryRequest<A>> newLogEntryRequestTypeReference;
     private RequestManager requestManager;
     private Role currentRole;
     private int currentTerm;
@@ -43,8 +50,14 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
     private Optional<Long> followerBehaviorTimerId;
     private Optional<Long> leaderElectionTimerId;
 
-    public RaftPeerImpl(final Parameters parameters) {
+    public RaftPeerImpl(
+        final RaftParameters parameters,
+        final TypeReference<AppendEntriesRequest<A>> appendEntriesRequestTypeReference,
+        final TypeReference<NewLogEntryRequest<A>> newLogEntryRequestTypeReference
+    ) {
         this.parameters = parameters;
+        this.appendEntriesRequestTypeReference = appendEntriesRequestTypeReference;
+        this.newLogEntryRequestTypeReference = newLogEntryRequestTypeReference;
     }
 
     @Override
@@ -105,13 +118,12 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         final var router = Router.router(getVertx());
         router.route().handler(BodyHandler.create());
         router.route(HttpMethod.POST, "/appendEntries").handler(ctx -> {
-            final AppendEntriesRequest<A> req = ctx.body().asPojo(AppendEntriesRequest.class);
+            final var req = JacksonCodec.decodeValue(ctx.body().buffer().toString(), appendEntriesRequestTypeReference);
             if (req.term < currentTerm ||
-                (req.entries.size() > 0 &&
-                    logTerm(req.prevLogIndex).stream()
-                        .boxed()
-                        .allMatch(Predicate.not(Predicate.isEqual(req.prevLogTerm)))
-                )) {
+                    (req.entries.size() > 0 &&
+                        logTerm(req.prevLogIndex).stream()
+                            .boxed()
+                            .allMatch(Predicate.not(Predicate.isEqual(req.prevLogTerm))))) {
                 log("Append entries failed");
                 resetTimer();
                 ctx.response().send(Json.encodeToBuffer(new AppendEntriesResponse(currentTerm, false)));
@@ -126,10 +138,10 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
             commitIndex = Math.min(req.leaderCommit, lastLogIndex());
 
             if (req.entries.size() > 0) {
-                final var finalSize = req.prevLogIndex + req.entries.size() + 1;
-                log.addAll(req.prevLogIndex + 1, req.entries);
-                log = log.subList(0, finalSize);
-            }
+                    final var finalSize = req.prevLogIndex + req.entries.size() + 1;
+                    log.addAll(req.prevLogIndex + 1, req.entries);
+                    log = log.subList(0, finalSize);
+                }
             resetTimer();
             ctx.response().send(Json.encodeToBuffer(new AppendEntriesResponse(currentTerm, true)));
         });
@@ -175,10 +187,10 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         });
         router.route(HttpMethod.POST, "/newLogEntry").handler(ctx -> {
             if (currentRole != Role.LEADER) {
-                ctx.response().setStatusCode(405);
+                ctx.response().setStatusCode(405).end();
                 return;
             }
-            final var req = (NewLogEntryRequest<A>) ctx.body().asPojo(NewLogEntryRequest.class);
+            final var req = JacksonCodec.decodeValue(ctx.body().buffer().toString(), newLogEntryRequestTypeReference);
             final var entries = req.entries.stream()
                 .map(e -> new LogEntry<>(currentTerm, e))
                 .collect(Collectors.toList());
@@ -286,9 +298,11 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
             .map(this::createAppendEntriesRequest)
             .collect(Collectors.toList());
         CompositeFuture.join(Collections.unmodifiableList(futures))
-            .onComplete(res -> log("Sent heartbeats to everyone."));
+            .onComplete(res -> {
+                log("Sent heartbeats to everyone.");
+                updateCommitIndex();
+            });
 
-        updateCommitIndex();
     }
 
     private void updateCommitIndex() {
@@ -301,7 +315,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         while (n <= lastLogIndex()) {
             final int finalN = n;
             if (log.get(n).term != currentTerm ||
-                !isMajority(matchIndex.values().stream().filter(x -> x >= finalN).count())) {
+                !isMajority(matchIndex.values().stream().filter(x -> x >= finalN).count() + 1)) {
                 break;
             }
             commitIndex = n;
@@ -329,7 +343,7 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
 
     private boolean isMajority(long count) {
         final var members = parameters.getMembers().keySet().size();
-        return count > (members / 2 + members % 2);
+        return count >= (members / 2 + 1);
     }
 
     private OptionalInt logTerm(int logIndex) {
@@ -353,10 +367,10 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
             return requestManager.appendEntries(parameters.getMembers().get(memberId), req)
                 .onSuccess(res -> {
                     if (res.success) {
-                        nextIndex.put(memberId, _lastLogIndex);
+                        nextIndex.put(memberId, _lastLogIndex + 1);
                         matchIndex.put(memberId, _lastLogIndex);
                     } else {
-                        nextIndex.put(memberId, nextIndexI - 1);
+                        nextIndex.put(memberId, Math.max(0, nextIndexI - 1));
                     }
                 });
         }

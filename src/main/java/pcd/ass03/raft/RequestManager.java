@@ -8,6 +8,7 @@ import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.Json;
+import io.vertx.core.spi.json.JsonCodec;
 import io.vertx.ext.web.handler.HttpException;
 import pcd.ass03.raft.message.*;
 
