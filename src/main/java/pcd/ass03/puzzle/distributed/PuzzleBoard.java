@@ -12,6 +12,7 @@ import java.awt.image.CropImageFilter;
 import java.awt.image.FilteredImageSource;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -98,8 +99,9 @@ public class PuzzleBoard extends JFrame {
     }
 
     private void checkSolution() {
+        System.out.println(Thread.currentThread().getName() + " | checkSolution()");
     	if(tiles.stream().allMatch(Tile::isInRightPlace)) {
-    		JOptionPane.showMessageDialog(this, "Puzzle Completed!", "", JOptionPane.INFORMATION_MESSAGE);
+            new Thread(() -> JOptionPane.showMessageDialog(this, "Puzzle Completed!", "", JOptionPane.INFORMATION_MESSAGE)).run();
     	}
     }
 
@@ -109,8 +111,13 @@ public class PuzzleBoard extends JFrame {
             .findFirst()
             .get();
         selectionManager.selectTile(click.sourceId, tile, () -> {
-            SwingUtilities.invokeLater(this::paintPuzzle);
-            (new Thread(this::checkSolution)).start();
+            try {
+                SwingUtilities.invokeAndWait(this::paintPuzzle);
+            } catch (InvocationTargetException | InterruptedException e) {
+                System.err.println(id + " | Error while updating the GUI.");
+            } finally {
+                checkSolution();
+            }
         });
     }
 

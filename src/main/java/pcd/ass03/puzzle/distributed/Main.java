@@ -12,7 +12,6 @@ import pcd.ass03.raft.RaftPeer;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -37,7 +36,7 @@ public class Main {
                 raftPeer.pushLogEntry(new Click(id, tile.getCurrentPosition()));
             });
             raftPeer.onApplyLogEntry((entry) -> {
-                System.out.println("applying " + entry);
+                System.out.println(id + " | applying " + entry);
                 if (entry instanceof Initialize) {
                     final var initialize = (Initialize) entry;
                     state.initialized = true;
@@ -54,13 +53,19 @@ public class Main {
                     final var positions = IntStream.range(0, parameters.rows * parameters.columns)
                         .boxed()
                         .collect(Collectors.toList());
-                    Collections.shuffle(positions);
+                    while (isListSorted(positions)) {
+                        System.out.println("Shuffle");
+                        Collections.shuffle(positions);
+                    }
                     raftPeer.pushLogEntry(new Initialize(positions));
                     state.initialized = true;
                 }
             });
             vertx.deployVerticle(raftPeer)
-                .onSuccess((s) -> System.out.println("Successfully deployed raft peer id = " + id + "."));
+                .onSuccess((s) -> {
+                    System.out.println(id + " | Successfully deployed raft peer id=" + id);
+                    System.out.println(id + " | Waiting for the election...");
+                });
         } catch (IllegalArgumentException ex) {
             System.err.println(ex.getMessage());
             System.exit(1);
@@ -74,6 +79,17 @@ public class Main {
         DatabindCodec.prettyMapper().registerModule(new SimpleModule() {{
             addSerializer(Command.class, Command.serializer);
         }});
+    }
+
+    private static <A extends Comparable<A>> boolean isListSorted(List<A> list) {
+        if (list.size() == 2) {
+            return list.get(0).compareTo(list.get(1)) <= 0;
+        } else if (list.size() == 1 || list.size() == 0) {
+            return true;
+        } else {
+            return list.get(0).compareTo(list.get(1)) <= 0 &&
+                isListSorted(list.subList(1, list.size()));
+        }
     }
 
     static class State {
