@@ -133,10 +133,10 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
             commitIndex = Math.min(req.leaderCommit, lastLogIndex());
 
             if (req.entries.size() > 0) {
-                    final var finalSize = req.prevLogIndex + req.entries.size() + 1;
-                    log.addAll(req.prevLogIndex + 1, req.entries);
-                    log = log.subList(0, finalSize);
-                }
+                final var finalSize = req.prevLogIndex + req.entries.size() + 1;
+                log.addAll(req.prevLogIndex + 1, req.entries);
+                log = new ArrayList<>(log.subList(0, finalSize));
+            }
             resetTimer();
             ctx.response().send(Json.encodeToBuffer(new AppendEntriesResponse(currentTerm, true)));
         });
