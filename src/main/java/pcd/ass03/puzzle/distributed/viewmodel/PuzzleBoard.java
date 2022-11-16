@@ -1,7 +1,8 @@
-package pcd.ass03.puzzle.distributed;
+package pcd.ass03.puzzle.distributed.viewmodel;
 
 import pcd.ass03.puzzle.concentrated.Tile;
 import pcd.ass03.puzzle.concentrated.TileButton;
+import pcd.ass03.puzzle.distributed.SelectionManager;
 import pcd.ass03.puzzle.distributed.commands.Click;
 
 import javax.imageio.ImageIO;
@@ -16,10 +17,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.IntStream;
 
 @SuppressWarnings("serial")
-public class PuzzleBoard extends JFrame {
+public class PuzzleBoard extends JFrame implements ViewModel {
 
     private final String title;
     private final int id;
@@ -47,6 +47,7 @@ public class PuzzleBoard extends JFrame {
         getContentPane().add(board, BorderLayout.CENTER);
     }
 
+    @Override
     public void createTiles(List<Integer> randomPositions) {
 		final BufferedImage image;
 
@@ -78,34 +79,8 @@ public class PuzzleBoard extends JFrame {
         paintPuzzle();
     }
 
-    private void paintPuzzle() {
-    	board.removeAll();
-
-    	Collections.sort(tiles);
-
-    	tiles.forEach(tile -> {
-    		final TileButton btn = new TileButton(tile);
-            final var color = tile.getOwnerId() == -1 ? Color.gray :
-                tile.getOwnerId() == id ? Color.red :
-                    Color.blue;
-            btn.setBorder(BorderFactory.createLineBorder(color));
-            btn.addActionListener(actionListener -> {
-            	_onTileClick.handle(tile);
-            });
-            board.add(btn);
-        });
-
-    	pack();
-    }
-
-    private void checkSolution() {
-        System.out.println(Thread.currentThread().getName() + " | checkSolution()");
-    	if(tiles.stream().allMatch(Tile::isInRightPlace)) {
-            new Thread(() -> JOptionPane.showMessageDialog(this, "Puzzle Completed!", "", JOptionPane.INFORMATION_MESSAGE)).run();
-    	}
-    }
-
-    public void click(Click click) {
+    @Override
+    public void handleClick(Click click) {
         final var tile = tiles.stream()
             .filter(t -> t.getCurrentPosition() == click.position)
             .findFirst()
@@ -121,12 +96,36 @@ public class PuzzleBoard extends JFrame {
         });
     }
 
+    @Override
     public void onTileClick(Listener onClick) {
         this._onTileClick = onClick;
     }
 
-    @FunctionalInterface
-    interface Listener {
-        void handle(Tile tile);
+    private void paintPuzzle() {
+        board.removeAll();
+
+        Collections.sort(tiles);
+
+        tiles.forEach(tile -> {
+            final TileButton btn = new TileButton(tile);
+            final var color = tile.getOwnerId() == -1 ? Color.gray :
+                tile.getOwnerId() == id ? Color.red :
+                    Color.blue;
+            btn.setBorder(BorderFactory.createLineBorder(color));
+            btn.addActionListener(actionListener -> {
+                _onTileClick.handle(tile);
+            });
+            board.add(btn);
+        });
+
+        pack();
     }
+
+    private void checkSolution() {
+        System.out.println(Thread.currentThread().getName() + " | checkSolution()");
+        if(tiles.stream().allMatch(Tile::isInRightPlace)) {
+            new Thread(() -> JOptionPane.showMessageDialog(this, "Puzzle Completed!", "", JOptionPane.INFORMATION_MESSAGE)).run();
+        }
+    }
+
 }

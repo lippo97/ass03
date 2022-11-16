@@ -109,6 +109,30 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         leaderElectionTimerId = Optional.empty();
     }
 
+
+    @Override
+    public void onBecomeLeader(Handler<Integer> handler) {
+        _onBecomeLeader = handler;
+    }
+
+    @Override
+    public void onApplyLogEntry(Handler<A> handler) {
+        _onApplyEntry = handler;
+    }
+
+    @Override
+    public Future<Void> pushLogEntries(List<A> entries) {
+        if (parameters.getId() == currentLeaderId) {
+            final var logEntries = entries.stream()
+                .map(e -> new LogEntry<>(currentTerm, e))
+                .collect(Collectors.toList());
+            this.log.addAll(logEntries);
+            return Future.succeededFuture();
+        }
+        final var req = new NewLogEntryRequest<>(parameters.getId(), entries);
+        return requestManager.newLogEntry(parameters.getMembers().get(currentLeaderId), req);
+    }
+
     private Router makeRouter() {
         final var router = Router.router(getVertx());
         router.route().handler(BodyHandler.create());
@@ -392,28 +416,5 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
         );
         var description = String.format("Raft(id=%d,term=%d,role=%s) | ", parameters.getId(), currentTerm, role);
         System.out.printf(description + format + "\n", args);
-    }
-
-    @Override
-    public void onBecomeLeader(Handler<Integer> handler) {
-        _onBecomeLeader = handler;
-    }
-
-    @Override
-    public void onApplyLogEntry(Handler<A> handler) {
-        _onApplyEntry = handler;
-    }
-
-    @Override
-    public Future<Void> pushLogEntries(List<A> entries) {
-        if (parameters.getId() == currentLeaderId) {
-            final var logEntries = entries.stream()
-                .map(e -> new LogEntry<>(currentTerm, e))
-                .collect(Collectors.toList());
-            this.log.addAll(logEntries);
-            return Future.succeededFuture();
-        }
-        final var req = new NewLogEntryRequest<>(parameters.getId(), entries);
-        return requestManager.newLogEntry(parameters.getMembers().get(currentLeaderId), req);
     }
 }
