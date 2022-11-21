@@ -31,7 +31,6 @@ public class Controller extends AbstractVerticle {
     @Override
     public void start() throws Exception {
         super.start();
-
         viewModel.onTileClick((Tile tile) -> {
             vertx.runOnContext((v) -> {
                 raftPeer.pushLogEntry(new Click(id, tile.getCurrentPosition()));

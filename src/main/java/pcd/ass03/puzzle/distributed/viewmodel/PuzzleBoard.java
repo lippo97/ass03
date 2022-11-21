@@ -76,7 +76,12 @@ public class PuzzleBoard extends JFrame implements ViewModel {
                 position++;
             }
         }
-        paintPuzzle();
+        try {
+            System.out.printf("%d | Thread: %s, calling invokeAndWait\n", id, Thread.currentThread().getName());
+            SwingUtilities.invokeAndWait(this::paintPuzzle);
+        } catch (InterruptedException | InvocationTargetException e) {
+            System.err.println(id + " | Error while updating the GUI.");
+        }
     }
 
     @Override
@@ -87,7 +92,11 @@ public class PuzzleBoard extends JFrame implements ViewModel {
             .get();
         selectionManager.selectTile(click.sourceId, tile, () -> {
             try {
+                long start = System.currentTimeMillis();
                 SwingUtilities.invokeAndWait(this::paintPuzzle);
+                long finish = System.currentTimeMillis();
+                long timeElapsed = finish - start;
+                System.out.println(id + " | Time elapsed painting: " + timeElapsed);
             } catch (InvocationTargetException | InterruptedException e) {
                 System.err.println(id + " | Error while updating the GUI.");
             } finally {
@@ -122,9 +131,9 @@ public class PuzzleBoard extends JFrame implements ViewModel {
     }
 
     private void checkSolution() {
-        System.out.println(Thread.currentThread().getName() + " | checkSolution()");
-        if(tiles.stream().allMatch(Tile::isInRightPlace)) {
-            new Thread(() -> JOptionPane.showMessageDialog(this, "Puzzle Completed!", "", JOptionPane.INFORMATION_MESSAGE)).run();
+        if (tiles.stream().allMatch(Tile::isInRightPlace)) {
+            new Thread(() -> JOptionPane.showMessageDialog(this, "Puzzle Completed!", "", JOptionPane.INFORMATION_MESSAGE))
+                .start();
         }
     }
 

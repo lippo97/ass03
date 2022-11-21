@@ -24,8 +24,8 @@ public class RaftPeerImpl<A> extends AbstractVerticle implements RaftPeer<A> {
     private static final boolean DEBUG = false;
     public static final int PROACTIVE_BEHAVIOR_TIMEOUT = 50;
     public static final int HEARTBEAT_TIMEOUT_LEADER = 25;
-    public static final int HEARTBEAT_TIMEOUT_MIN = 150;
-    public static final int HEARTBEAT_TIMEOUT_MAX = 300;
+    public static final int HEARTBEAT_TIMEOUT_MIN = 200;
+    public static final int HEARTBEAT_TIMEOUT_MAX = 400;
     private final RaftParameters parameters;
     private final TypeReference<AppendEntriesRequest<A>> appendEntriesRequestTypeReference;
     private final TypeReference<NewLogEntryRequest<A>> newLogEntryRequestTypeReference;
